@@ -1,0 +1,46 @@
+package handlers
+
+import (
+	"github.com/hoshinonyaruko/gensokyo/callapi"
+	"github.com/hoshinonyaruko/gensokyo/config"
+	"github.com/hoshinonyaruko/gensokyo/mylog"
+	"github.com/tencent-connect/botgo/openapi"
+)
+
+type GuildChannelListResponse struct {
+	Data      []interface{} `json:"data"`
+	Message   string        `json:"message"`
+	RetCode   int           `json:"retcode"`
+	Status    string        `json:"status"`
+	Echo      interface{}   `json:"echo,omitempty"`
+	RequestID interface{}   `json:"request_id,omitempty"`
+}
+
+func init() {
+	callapi.RegisterHandler("get_guild_channel_list", getGuildChannelList)
+}
+
+func getGuildChannelList(client callapi.Client, api openapi.OpenAPI, apiv2 openapi.OpenAPI, message callapi.ActionMessage) {
+
+	var response GuildChannelListResponse
+
+	response.Data = make([]interface{}, 0) // No data at the moment, but can be populated in the future
+	response.Message = ""
+	response.RetCode = 0
+	response.Status = "ok"
+	if config.GetUseRequestID() {
+		response.RequestID = callapi.GetActionEchoKey(message)
+	} else {
+		response.Echo = message.Echo
+	}
+
+	// Convert the members slice to a map
+	outputMap := structToMap(response)
+
+	mylog.Printf("get_guild_channel_list: %s", outputMap)
+
+	err := client.SendMessage(outputMap) //发回去
+	if err != nil {
+		mylog.Printf("Error sending message via client: %v", err)
+	}
+}

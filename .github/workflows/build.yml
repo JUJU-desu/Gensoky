@@ -1,0 +1,109 @@
+name: Build Multi-Platform Release
+
+on:
+  push:
+    branches:
+      - '*'  # 当推送到任意分支时触发
+  workflow_dispatch:  # 允许手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Windows 平台
+          - goos: windows
+            goarch: amd64
+            output: gensokyo_windows_amd64.exe
+          - goos: windows
+            goarch: arm64
+            output: gensokyo_windows_arm64.exe
+          
+          # Linux 平台
+          - goos: linux
+            goarch: amd64
+            output: gensokyo_linux_amd64
+          - goos: linux
+            goarch: arm64
+            output: gensokyo_linux_arm64
+          - goos: linux
+            goarch: arm
+            output: gensokyo_linux_arm
+          
+          # macOS 平台
+          - goos: darwin
+            goarch: amd64
+            output: gensokyo_darwin_amd64
+          - goos: darwin
+            goarch: arm64
+            output: gensokyo_darwin_arm64
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: false  # 禁用自动缓存以避免 tar 错误
+      
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w" -o ${{ matrix.output }} .
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: ${{ matrix.output }}
+  
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Generate version tag
+        id: version
+        run: |
+          # 使用日期和 commit SHA 生成版本号
+          VERSION="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+      
+      - name: Prepare files for release
+        run: |
+          mkdir -p release
+          if [ -d "./artifacts" ]; then
+            find ./artifacts -type f -exec cp {} release/ \;
+          fi
+          ls -lh release/
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          files: release/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true

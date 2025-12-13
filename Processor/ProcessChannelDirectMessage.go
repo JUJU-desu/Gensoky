@@ -1,0 +1,311 @@
+// 处理收到的信息事件
+package Processor
+
+import (
+	"fmt"
+	"log"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/hoshinonyaruko/gensokyo/config"
+	"github.com/hoshinonyaruko/gensokyo/echo"
+	"github.com/hoshinonyaruko/gensokyo/handlers"
+	"github.com/hoshinonyaruko/gensokyo/idmap"
+	"github.com/hoshinonyaruko/gensokyo/mylog"
+	"github.com/hoshinonyaruko/gensokyo/requestid"
+
+	"github.com/tencent-connect/botgo/dto"
+)
+
+// ProcessChannelDirectMessage 处理频道私信消息 这里我们是被动收到
+func (p *Processors) ProcessChannelDirectMessage(data *dto.WSDirectMessageData) error {
+	// 打印data结构体
+	//PrintStructWithFieldNames(data)
+
+	// 从私信中提取必要的信息 这是测试回复需要用到
+	//recipientID := data.Author.ID
+	//ChannelID := data.ChannelID
+	//sourece是源头频道
+	//GuildID := data.GuildID
+
+	//获取当前的s值(保留可选) 但已改为使用 requestID 生成 echostr
+	if !p.Settings.GlobalPrivateToChannel {
+		// 把频道类型的私信转换成普通ob11的私信
+
+		//转换appidstring
+		AppIDString := strconv.FormatUint(p.Settings.AppID, 10)
+		requestID := requestid.NewRequestID()
+		echostr := AppIDString + "_" + requestID
+
+		//将真实id转为int userid64
+		userid64, err := idmap.StoreIDv2(data.Author.ID)
+		if err != nil {
+			log.Fatalf("Error storing ID: %v", err)
+		}
+
+		//将真实id写入数据库,可取出ChannelID
+		idmap.WriteConfigv2(data.Author.ID, "channel_id", data.ChannelID)
+		//将channelid写入数据库,可取出guild_id
+		ChannelID64, err := idmap.StoreIDv2(data.ChannelID)
+		if err != nil {
+			mylog.Printf("Error storing ID: %v", err)
+			return nil
+		}
+		//转成int再互转
+		idmap.WriteConfigv2(fmt.Sprint(ChannelID64), "guild_id", data.GuildID)
+		//直接储存 适用于私信场景私聊
+		idmap.WriteConfigv2(data.ChannelID, "guild_id", data.GuildID)
+		//收到私聊信息调用的具体还原步骤
+		//1,idmap还原真实userid,
+		//2,通过idmap获取channelid,
+		//3,通过idmap用channelid获取guildid,
+		//发信息使用的是guildid
+		//todo 优化数据库读写次数
+		messageID64, err := idmap.StoreIDv2(data.ID)
+		if err != nil {
+			log.Fatalf("Error storing ID: %v", err)
+		}
+		messageID := int(messageID64)
+		messageText := data.Content
+		// 如果在Array模式下, 则处理Message为Segment格式
+		var segmentedMessages interface{} = messageText
+		if config.GetArrayValue() {
+			segmentedMessages = handlers.ConvertToSegmentedMessage(data)
+		}
+		privateMsg := OnebotPrivateMessage{
+			RawMessage:  messageText,
+			Message:     segmentedMessages,
+			MessageID:   messageID,
+			MessageType: "private",
+			PostType:    "message",
+			SelfID:      int64(p.Settings.AppID),
+			UserID:      userid64,
+			Sender: PrivateSender{
+				Nickname: data.Member.Nick,
+				UserID:   userid64,
+			},
+			SubType: "friend",
+			Time:    time.Now().Unix(),
+			Avatar:  data.Author.Avatar,
+		}
+		// 根据条件判断设置 Echo 或 RequestID
+		if config.GetUseRequestID() {
+			privateMsg.RequestID = echostr
+		} else {
+			privateMsg.Echo = echostr
+		}
+		// 将当前 requestID 及 appid 映射到 message
+		echo.AddMsgIDWithKey(echostr, data.ID)
+		echo.AddMsgTypeWithKey(echostr, "guild_private")
+		if idx := strings.Index(echostr, "_"); idx >= 0 {
+			bare := echostr[idx+1:]
+			echo.AddMsgIDWithKey(bare, data.ID)
+			echo.AddMsgTypeWithKey(bare, "guild_private")
+		}
+		//其实不需要用AppIDString,因为gensokyo是单机器人框架
+		echo.AddMsgID(AppIDString, userid64, data.ID)
+		echo.AddMsgType(AppIDString, userid64, "guild_private")
+
+		// 调试
+		PrintStructWithFieldNames(privateMsg)
+
+		// Convert OnebotGroupMessage to map and send
+		privateMsgMap := structToMap(privateMsg)
+		//上报信息到onebotv11应用端(正反ws)
+		p.BroadcastMessageToAll(privateMsgMap)
+	} else {
+		if !p.Settings.GlobalChannelToGroup {
+			//将频道私信作为普通频道信息
+
+			// 将时间字符串转换为时间戳
+			t, err := time.Parse(time.RFC3339, string(data.Timestamp))
+			if err != nil {
+				return fmt.Errorf("error parsing time: %v", err)
+			}
+			//获取s（保留但不用于 echostr，因为使用 requestID）
+			//转换at
+			messageText := handlers.RevertTransformedText(data)
+			//转换appid
+			AppIDString := strconv.FormatUint(p.Settings.AppID, 10)
+			//构造echo
+			requestID := requestid.NewRequestID()
+			echostr := AppIDString + "_" + requestID
+			//映射str的userid到int
+			userid64, err := idmap.StoreIDv2(data.Author.ID)
+			if err != nil {
+				mylog.Printf("Error storing ID: %v", err)
+				return nil
+			}
+			//OnebotChannelMessage
+			onebotMsg := OnebotChannelMessage{
+				ChannelID:   data.ChannelID,
+				GuildID:     data.GuildID,
+				Message:     messageText,
+				RawMessage:  messageText,
+				MessageID:   data.ID,
+				MessageType: "guild",
+				PostType:    "message",
+				SelfID:      int64(p.Settings.AppID),
+				UserID:      userid64,
+				SelfTinyID:  "",
+				Sender: Sender{
+					Nickname: data.Member.Nick,
+					TinyID:   "",
+					UserID:   userid64,
+				},
+				SubType: "channel",
+				Time:    t.Unix(),
+				Avatar:  data.Author.Avatar,
+			}
+			// 根据条件判断设置 Echo 或 RequestID
+			if config.GetUseRequestID() {
+				onebotMsg.RequestID = echostr
+			} else {
+				onebotMsg.Echo = echostr
+			}
+			// 获取MasterID数组
+			masterIDs := config.GetMasterID()
+
+			// 判断userid64是否在masterIDs数组里
+			isMaster := false
+			for _, id := range masterIDs {
+				if strconv.FormatInt(userid64, 10) == id {
+					isMaster = true
+					break
+				}
+			}
+
+			// 根据isMaster的值为groupMsg的Sender赋值role字段
+			if isMaster {
+				onebotMsg.Sender.Role = "owner"
+			} else {
+				onebotMsg.Sender.Role = "member"
+			}
+			//将当前 requestID 及 appid 映射到 message
+			echo.AddMsgIDWithKey(echostr, data.ID)
+			//通过echo始终得知真实的事件类型,来对应调用正确的api
+			echo.AddMsgTypeWithKey(echostr, "guild_private")
+			if idx := strings.Index(echostr, "_"); idx >= 0 {
+				bare := echostr[idx+1:]
+				echo.AddMsgIDWithKey(bare, data.ID)
+				echo.AddMsgTypeWithKey(bare, "guild_private")
+			}
+			//为不支持双向echo的ob服务端映射
+			echo.AddMsgID(AppIDString, userid64, data.ID)
+			echo.AddMsgType(AppIDString, userid64, "guild_private")
+			//储存当前群或频道号的类型
+			idmap.WriteConfigv2(data.ChannelID, "type", "guild_private")
+			//todo 完善频道类型信息转换
+
+			//调试
+			PrintStructWithFieldNames(onebotMsg)
+
+			// 将 onebotMsg 结构体转换为 map[string]interface{}
+			msgMap := structToMap(onebotMsg)
+			//上报信息到onebotv11应用端(正反ws)
+			p.BroadcastMessageToAll(msgMap)
+		} else {
+			//将频道信息转化为群信息(特殊需求情况下)
+			//将channelid写入bolt,可取出guild_id
+			ChannelID64, err := idmap.StoreIDv2(data.ChannelID)
+			if err != nil {
+				mylog.Printf("Error storing ID: %v", err)
+				return nil
+			}
+			//转成int再互转 适用于群场景私聊
+			idmap.WriteConfigv2(fmt.Sprint(ChannelID64), "guild_id", data.GuildID)
+			//转换at
+			messageText := handlers.RevertTransformedText(data)
+			//转换appid
+			AppIDString := strconv.FormatUint(p.Settings.AppID, 10)
+			//构造echo
+			requestID := requestid.NewRequestID()
+			echostr := AppIDString + "_" + requestID
+			//映射str的userid到int
+			userid64, err := idmap.StoreIDv2(data.Author.ID)
+			if err != nil {
+				mylog.Printf("Error storing ID: %v", err)
+				return nil
+			}
+			//userid := int(userid64)
+			//映射str的messageID到int
+			messageID64, err := idmap.StoreIDv2(data.ID)
+			if err != nil {
+				mylog.Printf("Error storing ID: %v", err)
+				return nil
+			}
+			messageID := int(messageID64)
+			// 如果在Array模式下, 则处理Message为Segment格式
+			var segmentedMessages interface{} = messageText
+			if config.GetArrayValue() {
+				segmentedMessages = handlers.ConvertToSegmentedMessage(data)
+			}
+			groupMsg := OnebotGroupMessage{
+				RawMessage:  messageText,
+				Message:     segmentedMessages,
+				MessageID:   messageID,
+				GroupID:     ChannelID64,
+				MessageType: "group",
+				PostType:    "message",
+				SelfID:      int64(p.Settings.AppID),
+				UserID:      userid64,
+				Sender: Sender{
+					Nickname: data.Member.Nick,
+					UserID:   userid64,
+				},
+				SubType: "normal",
+				Time:    time.Now().Unix(),
+				Avatar:  data.Author.Avatar,
+			}
+			// 根据条件判断设置 Echo 或 RequestID
+			if config.GetUseRequestID() {
+				groupMsg.RequestID = echostr
+			} else {
+				groupMsg.Echo = echostr
+			}
+			// 获取MasterID数组
+			masterIDs := config.GetMasterID()
+
+			// 判断userid64是否在masterIDs数组里
+			isMaster := false
+			for _, id := range masterIDs {
+				if strconv.FormatInt(userid64, 10) == id {
+					isMaster = true
+					break
+				}
+			}
+
+			// 根据isMaster的值为groupMsg的Sender赋值role字段
+			if isMaster {
+				groupMsg.Sender.Role = "owner"
+			} else {
+				groupMsg.Sender.Role = "member"
+			}
+			//将当前 requestID 及 appid 映射到 message
+			echo.AddMsgIDWithKey(echostr, data.ID)
+			echo.AddMsgTypeWithKey(echostr, "guild_private")
+			if idx := strings.Index(echostr, "_"); idx >= 0 {
+				bare := echostr[idx+1:]
+				echo.AddMsgIDWithKey(bare, data.ID)
+				echo.AddMsgTypeWithKey(bare, "guild_private")
+			}
+			//为不支持双向echo的ob服务端映射
+			echo.AddMsgID(AppIDString, userid64, data.ID)
+			echo.AddMsgType(AppIDString, userid64, "guild_private")
+			//储存当前群或频道号的类型
+			idmap.WriteConfigv2(fmt.Sprint(ChannelID64), "type", "guild_private")
+			echo.AddMsgType(AppIDString, ChannelID64, "guild_private")
+
+			//调试
+			PrintStructWithFieldNames(groupMsg)
+
+			// Convert OnebotGroupMessage to map and send
+			groupMsgMap := structToMap(groupMsg)
+			//上报信息到onebotv11应用端(正反ws)
+			p.BroadcastMessageToAll(groupMsgMap)
+		}
+
+	}
+	return nil
+}

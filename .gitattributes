@@ -1,0 +1,28 @@
+webui/dist/* linguist-generated=true
+*.exe binary
+
+# Enforce LF for text files
+* text=auto
+
+# Force LF for common text types
+*.go text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+
+# Lock files and others
+*.lock binary
+README.md text eol=lf

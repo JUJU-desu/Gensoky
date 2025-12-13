@@ -1,0 +1,1 @@
+用AI魔改了Gensoky，使其兼容Rionbot，去除了WebUI并且自动更新token防止无法连接；不保证对其他onebotV11项目的兼容

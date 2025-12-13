@@ -1,0 +1,206 @@
+package handlers
+
+import (
+	"context"
+	"encoding/base64"
+	"os"
+
+	"github.com/hoshinonyaruko/gensokyo/callapi"
+	"github.com/hoshinonyaruko/gensokyo/config"
+	"github.com/hoshinonyaruko/gensokyo/idmap"
+	"github.com/hoshinonyaruko/gensokyo/images"
+	"github.com/hoshinonyaruko/gensokyo/mylog"
+
+	"github.com/hoshinonyaruko/gensokyo/echo"
+
+	"github.com/tencent-connect/botgo/dto"
+	"github.com/tencent-connect/botgo/openapi"
+)
+
+func init() {
+	callapi.RegisterHandler("send_guild_channel_msg", handleSendGuildChannelMsg)
+}
+
+func handleSendGuildChannelMsg(client callapi.Client, api openapi.OpenAPI, apiv2 openapi.OpenAPI, message callapi.ActionMessage) {
+	// 使用 message.Echo 作为key来获取消息类型
+	var msgType string
+	echoVal := callapi.GetActionEchoKey(message)
+	if echoStr, ok := resolveEchoToString(echoVal); ok {
+		// 当 message.Echo 或 request_id 是字符串类型时执行此块
+		msgType = echo.GetMsgTypeByKey(echoStr)
+	}
+
+	// 如果获取不到，使用 user_id 获取消息类型（后备兼容）
+	if msgType == "" && message.Params.UserID != nil {
+		msgType = GetMessageTypeByUserid(config.GetAppIDStr(), message.Params.UserID)
+	}
+
+	//如果获取不到 就用group_id获取信息类型
+	if msgType == "" {
+		appID := config.GetAppIDStr()
+		groupID := message.Params.GroupID
+		mylog.Printf("appID: %s, GroupID: %v\n", appID, groupID)
+
+		msgType = GetMessageTypeByGroupid(appID, groupID)
+		mylog.Printf("msgType: %s\n", msgType)
+	}
+
+	switch msgType {
+	//原生guild信息
+	case "guild":
+		params := message.Params
+		messageText, foundItems := parseMessageContent(params)
+
+		channelID := params.ChannelID
+		//mylog.Printf("发送文本信息失败: %v,%v", channelID, channelID)
+		// 使用 echo 获取消息ID
+		var messageID string
+		if echoStr, ok := resolveEchoToString(echoVal); ok {
+			messageID = echo.GetMsgIDByKey(echoStr)
+			mylog.Println("echo取频道发信息对应的message_id:", messageID)
+		}
+		// 如果messageID为空，通过函数获取
+		if messageID == "" {
+			messageID = GetMessageIDByUseridOrGroupid(config.GetAppIDStr(), channelID)
+			mylog.Println("通过GetMessageIDByUseridOrGroupid函数获取的message_id:", messageID)
+		}
+		mylog.Println("频道发信息messageText:", messageText)
+		//mylog.Println("foundItems:", foundItems)
+		// 优先发送文本信息
+		var err error
+		if messageText != "" {
+			textMsg, _ := generateReplyMessage(messageID, nil, messageText)
+			if _, err = api.PostMessage(context.TODO(), channelID, textMsg); err != nil {
+				mylog.Printf("发送文本信息失败: %v", err)
+			}
+			//发送成功回执
+			SendResponse(client, err, &message)
+		}
+
+		// 遍历foundItems并发送每种信息
+		for key, urls := range foundItems {
+			var singleItem = make(map[string][]string)
+			singleItem[key] = urls
+
+			reply, isBase64Image := generateReplyMessage(messageID, singleItem, "")
+
+			if isBase64Image {
+				// 将base64内容从reply的Content转换回字节
+				fileImageData, err := base64.StdEncoding.DecodeString(reply.Content)
+				if err != nil {
+					mylog.Printf("Base64 解码失败: %v", err)
+					return // 或其他的错误处理方式
+				}
+
+				// 清除reply的Content
+				reply.Content = ""
+
+				// 使用Multipart方法发送
+				if _, err = api.PostMessageMultipart(context.TODO(), channelID, reply, fileImageData); err != nil {
+					mylog.Printf("使用multipart发送 %s 信息失败: %v message_id %v", key, err, messageID)
+				}
+				//发送成功回执
+				SendResponse(client, err, &message)
+			} else {
+				if _, err = api.PostMessage(context.TODO(), channelID, reply); err != nil {
+					mylog.Printf("发送 %s 信息失败: %v", key, err)
+				}
+				//发送成功回执
+				SendResponse(client, err, &message)
+			}
+
+		}
+	//频道私信 此时直接取出
+	case "guild_private":
+		params := message.Params
+		channelID := params.ChannelID
+		guildID := params.GuildID
+		// 使用RetrieveRowByIDv2还原真实的ChannelID
+		RChannelID, err := idmap.RetrieveRowByIDv2(channelID)
+		if err != nil {
+			mylog.Printf("error retrieving real UserID: %v", err)
+		}
+		handleSendGuildChannelPrivateMsg(client, api, apiv2, message, &guildID, &RChannelID)
+	default:
+		mylog.Printf("2Unknown message type: %s", msgType)
+	}
+}
+
+// 组合发频道信息需要的MessageToCreate 支持base64
+func generateReplyMessage(id string, foundItems map[string][]string, messageText string) (*dto.MessageToCreate, bool) {
+	var reply dto.MessageToCreate
+	var isBase64 bool
+
+	if imageURLs, ok := foundItems["local_image"]; ok && len(imageURLs) > 0 {
+		// 从本地图路径读取图片
+		imageData, err := os.ReadFile(imageURLs[0])
+		if err != nil {
+			// 读入文件,如果是本地图,应用端和gensokyo需要在一台电脑
+			mylog.Printf("Error reading the image from path %s: %v", imageURLs[0], err)
+			// 发文本信息，提示图片文件不存在
+			reply = dto.MessageToCreate{
+				Content: "错误: 图片文件不存在",
+				MsgID:   id,
+				MsgType: 0, // 默认文本类型
+			}
+			return &reply, false
+		}
+		// 首先压缩图片
+		compressedData, err := images.CompressSingleImage(imageData)
+		if err != nil {
+			mylog.Printf("Error compressing image: %v", err)
+			return &dto.MessageToCreate{
+				Content: "错误: 压缩图片失败",
+				MsgID:   id,
+				MsgType: 0, // 默认文本类型
+			}, false
+		}
+		//base64编码
+		base64Encoded := base64.StdEncoding.EncodeToString(compressedData)
+
+		// 当作base64图来处理
+		reply = dto.MessageToCreate{
+			Content: base64Encoded,
+			MsgID:   id,
+			MsgType: 0, // Assuming type 0 for images
+		}
+		isBase64 = true
+	} else if imageURLs, ok := foundItems["url_image"]; ok && len(imageURLs) > 0 {
+		// 发送网络图
+		reply = dto.MessageToCreate{
+			//EventID: id,           // Use a placeholder event ID for now
+			Image:   "http://" + imageURLs[0], // Using the same Image field for external URLs, adjust if needed
+			MsgID:   id,
+			MsgType: 0, // Assuming type 0 for images
+		}
+	} else if voiceURLs, ok := foundItems["base64_record"]; ok && len(voiceURLs) > 0 {
+		//还不支持发语音
+		// Sending a voice message
+		// reply = dto.MessageToCreate{
+		// 	EventID: id,
+		// 	Embed: &dto.Embed{
+		// 		URL: voiceURLs[0], // Assuming voice is embedded using a URL
+		// 	},
+		// 	MsgID:   id,
+		// 	MsgType: 0, // Adjust type as needed for voice
+		// }
+	} else if base64_image, ok := foundItems["base64_image"]; ok && len(base64_image) > 0 {
+		// base64图片
+		reply = dto.MessageToCreate{
+			Content: base64_image[0], // 直接使用base64_image[0]作为Content
+			MsgID:   id,
+			MsgType: 0, // Default type for text
+		}
+		isBase64 = true
+	} else {
+		// 发文本信息
+		reply = dto.MessageToCreate{
+			//EventID: id,
+			Content: messageText,
+			MsgID:   id,
+			MsgType: 0, // Default type for text
+		}
+	}
+
+	return &reply, isBase64
+}

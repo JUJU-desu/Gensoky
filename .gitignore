@@ -1,0 +1,15 @@
+# botgo specific
+config.yml
+*.db
+*.db.lock
+*.ini
+
+# Go specific
+*.exe
+gensokyo
+
+# Ignore channel_temp
+channel_temp/
+
+# ignore dist
+webui/dist/

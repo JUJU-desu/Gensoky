@@ -165,10 +165,19 @@ func PrintStructWithFieldNames(v interface{}) {
 		return
 	}
 
-	// 迭代所有的字段并打印字段名和值
+	// 迭代所有的字段并打印 JSON tag 名称（如果存在）以及对应的值
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		value := val.Field(i)
+		jsonTag := field.Tag.Get("json")
+		if jsonTag != "" {
+			// 取逗号之前的字段名
+			parts := strings.Split(jsonTag, ",")
+			if parts[0] != "" {
+				mylog.Printf("%s: %v\n", parts[0], value.Interface())
+				continue
+			}
+		}
 		mylog.Printf("%s: %v\n", field.Name, value.Interface())
 	}
 }

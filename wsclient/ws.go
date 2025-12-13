@@ -33,6 +33,25 @@ func (c *WebSocketClient) SendMessage(message map[string]interface{}) error {
 	c.mutex.Lock()         // 在写操作之前锁定
 	defer c.mutex.Unlock() // 确保在函数返回时解锁
 
+	// ensure that params.request_id is present if there's a top-level request_id
+	if req, ok := message["request_id"]; ok {
+		if params, ok2 := message["params"]; ok2 {
+			// ensure params is a map[string]interface{}
+			if pm, ok3 := params.(map[string]interface{}); ok3 {
+				if _, exists := pm["request_id"]; !exists {
+					pm["request_id"] = req
+					message["params"] = pm
+				}
+			} else {
+				// params exists but not a map, overwrite
+				message["params"] = map[string]interface{}{"request_id": req}
+			}
+		} else {
+			// ensure params exists and contains request_id
+			message["params"] = map[string]interface{}{"request_id": req}
+		}
+	}
+
 	msgBytes, err := json.Marshal(message)
 	if err != nil {
 		mylog.Println("Error marshalling message:", err)
@@ -155,7 +174,7 @@ func TruncateMessage(message callapi.ActionMessage, maxLength int) string {
 	}
 
 	echoVal := callapi.GetActionEchoKey(message)
-	return fmt.Sprintf("Action: %s, Params: %s, RequestID: %v", message.Action, truncatedParams, echoVal)
+	return fmt.Sprintf("Action: %s, Params: %s, request_id: %v", message.Action, truncatedParams, echoVal)
 }
 
 // 发送心跳包

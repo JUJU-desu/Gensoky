@@ -73,7 +73,7 @@ func (p *Processors) ProcessC2CMessage(data *dto.WSC2CMessageData) error {
 			Time:    time.Now().Unix(),
 			Avatar:  "", //todo 同上
 		}
-		// 根据条件判断设置 Echo 或 RequestID
+		// 根据条件判断设置 Echo 或 request_id
 		if config.GetUseRequestID() {
 			privateMsg.RequestID = echostr
 		} else {
@@ -108,7 +108,7 @@ func (p *Processors) ProcessC2CMessage(data *dto.WSC2CMessageData) error {
 		messageText := handlers.RevertTransformedText(data)
 		//转换appid
 		AppIDString := strconv.FormatUint(p.Settings.AppID, 10)
-		//构造echo（使用非自增 requestID）
+		// 构造echo（使用非自增 request_id）
 		requestID := requestid.NewRequestID()
 		echostr := AppIDString + "_" + requestID
 		//把userid作为群号
@@ -143,7 +143,7 @@ func (p *Processors) ProcessC2CMessage(data *dto.WSC2CMessageData) error {
 			Time:    time.Now().Unix(),
 			Avatar:  "",
 		}
-		// 根据条件判断设置 Echo 或 RequestID
+		// 根据条件判断设置 Echo 或 request_id
 		if config.GetUseRequestID() {
 			groupMsg.RequestID = echostr
 		} else {
@@ -167,7 +167,7 @@ func (p *Processors) ProcessC2CMessage(data *dto.WSC2CMessageData) error {
 		} else {
 			groupMsg.Sender.Role = "member"
 		}
-		//将当前 requestID 及 appid 映射到 message
+		// 将当前 request_id 及 appid 映射到 message
 		echo.AddMsgIDWithKey(echostr, data.ID)
 		echo.AddMsgTypeWithKey(echostr, "group_private")
 		if idx := strings.Index(echostr, "_"); idx >= 0 {

@@ -28,7 +28,7 @@ func (p *Processors) ProcessGroupMessage(data *dto.WSGroupATMessageData) error {
 	// 转换appid
 	AppIDString := strconv.FormatUint(p.Settings.AppID, 10)
 
-	// 构造echostr（使用非自增 requestID 以避免重用 s）
+	// 构造echostr（使用非自增 request_id 以避免重用 s）
 	requestID := requestid.NewRequestID()
 	echostr := AppIDString + "_" + requestID
 
@@ -73,7 +73,7 @@ func (p *Processors) ProcessGroupMessage(data *dto.WSGroupATMessageData) error {
 		Time:    time.Now().Unix(),
 		Avatar:  "",
 	}
-	// 根据条件判断设置 Echo 或 RequestID
+	// 根据条件判断设置 Echo 或 request_id
 	if config.GetUseRequestID() {
 		groupMsg.RequestID = echostr
 	} else {
@@ -97,7 +97,7 @@ func (p *Processors) ProcessGroupMessage(data *dto.WSGroupATMessageData) error {
 	} else {
 		groupMsg.Sender.Role = "member"
 	}
-	// 将当前 requestID(非自增) 以及 appid 映射到 message（用于被动回复）
+	// 将当前 request_id(非自增) 以及 appid 映射到 message（用于被动回复）
 	echo.AddMsgIDWithKey(echostr, data.ID)
 	echo.AddMsgTypeWithKey(echostr, "group")
 	// 同时保存裸request_id到映射（兼容某些服务端只返回裸request_id）

@@ -442,7 +442,7 @@ func GetTwoWayEcho() bool {
 	return instance.Settings.TwoWayEcho
 }
 
-// GetUseRequestID returns whether to use requestID for echostr
+// GetUseRequestID returns whether to use request_id for echostr
 // Backward compatible: if UseRequestID is false, fall back to TwoWayEcho
 func GetUseRequestID() bool {
 	mu.Lock()

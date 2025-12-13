@@ -43,13 +43,68 @@ func (a *ActionMessage) UnmarshalJSON(data []byte) error {
 		if lastErr = json.Unmarshal(rawRequestID, &intValue); lastErr == nil {
 			a.RequestID = intValue
 			a.Echo = intValue
+			a.Params.RequestID = a.RequestID
 			return nil
+		}
+
+		// If request_id not set at top-level, try to find it inside params.
+		if a.RequestID == nil {
+			var rawMap map[string]json.RawMessage
+			if err := json.Unmarshal(data, &rawMap); err == nil {
+				if paramsRaw, ok := rawMap["params"]; ok {
+					var paramsMap map[string]json.RawMessage
+					if err := json.Unmarshal(paramsRaw, &paramsMap); err == nil {
+						// Check for common key variants
+						var reqRaw json.RawMessage
+						if v, ok := paramsMap["request_id"]; ok {
+							reqRaw = v
+						} else if v, ok := paramsMap["requestID"]; ok {
+							reqRaw = v
+						}
+						if reqRaw != nil {
+							fmt.Printf("DEBUG Unmarshal: params.request_id raw: %s\n", string(reqRaw))
+							// Try string first
+							var s string
+							if err := json.Unmarshal(reqRaw, &s); err == nil {
+								a.RequestID = s
+								a.Echo = s
+								a.Params.RequestID = a.RequestID
+								return nil
+							}
+							// Try numeric -> map to string
+							var f float64
+							if err := json.Unmarshal(reqRaw, &f); err == nil {
+								a.RequestID = fmt.Sprintf("%.0f", f)
+								a.Echo = a.RequestID
+								a.Params.RequestID = a.RequestID
+								return nil
+							}
+							// Try other types for compatibility
+							var obj map[string]interface{}
+							if err := json.Unmarshal(reqRaw, &obj); err == nil {
+								a.RequestID = obj
+								a.Echo = obj
+								a.Params.RequestID = a.RequestID
+								return nil
+							}
+							var arr []interface{}
+							if err := json.Unmarshal(reqRaw, &arr); err == nil {
+								a.RequestID = arr
+								a.Echo = arr
+								a.Params.RequestID = a.RequestID
+								return nil
+							}
+						}
+					}
+				}
+			}
 		}
 
 		var strValue string
 		if lastErr = json.Unmarshal(rawRequestID, &strValue); lastErr == nil {
 			a.RequestID = strValue
 			a.Echo = strValue
+			a.Params.RequestID = a.RequestID
 			return nil
 		}
 
@@ -57,6 +112,7 @@ func (a *ActionMessage) UnmarshalJSON(data []byte) error {
 		if lastErr = json.Unmarshal(rawRequestID, &arrValue); lastErr == nil {
 			a.RequestID = arrValue
 			a.Echo = arrValue
+			a.Params.RequestID = a.RequestID
 			return nil
 		}
 
@@ -64,6 +120,7 @@ func (a *ActionMessage) UnmarshalJSON(data []byte) error {
 		if lastErr = json.Unmarshal(rawRequestID, &objValue); lastErr == nil {
 			a.RequestID = objValue
 			a.Echo = objValue
+			a.Params.RequestID = a.RequestID
 			return nil
 		}
 	}
@@ -85,31 +142,87 @@ func (a *ActionMessage) UnmarshalJSON(data []byte) error {
 			if lastErr = json.Unmarshal(rawRequestID, &intValue); lastErr == nil {
 				a.RequestID = intValue
 				a.Echo = intValue
+				a.Params.RequestID = a.RequestID
 				return nil
 			}
 			var strValue string
 			if lastErr = json.Unmarshal(rawRequestID, &strValue); lastErr == nil {
 				a.RequestID = strValue
 				a.Echo = strValue
+				a.Params.RequestID = a.RequestID
 				return nil
 			}
 			var arrValue []interface{}
 			if lastErr = json.Unmarshal(rawRequestID, &arrValue); lastErr == nil {
 				a.RequestID = arrValue
 				a.Echo = arrValue
+				a.Params.RequestID = a.RequestID
 				return nil
 			}
 			var objValue map[string]interface{}
 			if lastErr = json.Unmarshal(rawRequestID, &objValue); lastErr == nil {
 				a.RequestID = objValue
 				a.Echo = objValue
+				a.Params.RequestID = a.RequestID
 				return nil
+			}
+		}
+
+		// If request_id not set at top-level, try to find it inside params.
+		if a.RequestID == nil {
+			var rawMap map[string]json.RawMessage
+			if err := json.Unmarshal(data, &rawMap); err == nil {
+				if paramsRaw, ok := rawMap["params"]; ok {
+					var paramsMap map[string]json.RawMessage
+					if err := json.Unmarshal(paramsRaw, &paramsMap); err == nil {
+						// Check for common key variants
+						var reqRaw json.RawMessage
+						if v, ok := paramsMap["request_id"]; ok {
+							reqRaw = v
+						} else if v, ok := paramsMap["requestID"]; ok {
+							reqRaw = v
+						}
+						if reqRaw != nil {
+							// Try string first
+							var s string
+							if err := json.Unmarshal(reqRaw, &s); err == nil {
+								a.RequestID = s
+								a.Echo = s
+								return nil
+							}
+							// Try numeric -> map to string
+							var f float64
+							if err := json.Unmarshal(reqRaw, &f); err == nil {
+								a.RequestID = fmt.Sprintf("%.0f", f)
+								a.Echo = a.RequestID
+								return nil
+							}
+							// Try other types for compatibility
+							var obj map[string]interface{}
+							if err := json.Unmarshal(reqRaw, &obj); err == nil {
+								a.RequestID = obj
+								a.Echo = obj
+								return nil
+							}
+							var arr []interface{}
+							if err := json.Unmarshal(reqRaw, &arr); err == nil {
+								a.RequestID = arr
+								a.Echo = arr
+								return nil
+							}
+						}
+					}
+				}
 			}
 		}
 
 		var strValue string
 		if lastErr = json.Unmarshal(rawEcho, &strValue); lastErr == nil {
 			a.Echo = strValue
+			if a.RequestID == nil {
+				a.RequestID = strValue
+				a.Params.RequestID = a.RequestID
+			}
 			return nil
 		}
 
@@ -126,12 +239,60 @@ func (a *ActionMessage) UnmarshalJSON(data []byte) error {
 		}
 
 		return fmt.Errorf("unable to unmarshal echo: %v", lastErr)
+		}
+
+		// Fallback: if RequestID still nil, try pulling from params unconditionally
+		// This handles cases where params.request_id exists but no top-level echo/request_id provided
+		if a.RequestID == nil {
+			var rawMap map[string]json.RawMessage
+			if err := json.Unmarshal(data, &rawMap); err == nil {
+				if paramsRaw, ok := rawMap["params"]; ok {
+					var paramsMap map[string]json.RawMessage
+					if err := json.Unmarshal(paramsRaw, &paramsMap); err == nil {
+						var reqRaw json.RawMessage
+						if v, ok := paramsMap["request_id"]; ok {
+							reqRaw = v
+						} else if v, ok := paramsMap["requestID"]; ok {
+							reqRaw = v
+						}
+						if reqRaw != nil {
+							// Try string
+							var s string
+							if err := json.Unmarshal(reqRaw, &s); err == nil {
+								a.RequestID = s
+								a.Echo = s
+							}
+							var f float64
+							if err := json.Unmarshal(reqRaw, &f); err == nil {
+								a.RequestID = fmt.Sprintf("%.0f", f)
+								a.Echo = a.RequestID
+							}
+							var obj map[string]interface{}
+							if err := json.Unmarshal(reqRaw, &obj); err == nil {
+								a.RequestID = obj
+								a.Echo = obj
+							}
+							var arr []interface{}
+							if err := json.Unmarshal(reqRaw, &arr); err == nil {
+								a.RequestID = arr
+								a.Echo = arr
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// If RequestID found, ensure it also exists inside Params for compatibility
+		if a.RequestID != nil {
+			// If params struct exists, set its RequestID field
+			a.Params.RequestID = a.RequestID
+		}
+
+		return nil
 	}
 
-	return nil
-}
-
-// params类型
+	// params类型
 type ParamsContent struct {
 	BotQQ     string      `json:"botqq"`
 	ChannelID string      `json:"channel_id"`
@@ -141,6 +302,7 @@ type ParamsContent struct {
 	UserID    interface{} `json:"user_id"`            // 这里使用interface{}因为它可能是多种类型
 	Duration  int         `json:"duration,omitempty"` // 可选的整数
 	Enable    bool        `json:"enable,omitempty"`   // 可选的布尔值
+	RequestID interface{} `json:"request_id,omitempty"`
 }
 
 // 自定义一个ParamsContent的UnmarshalJSON 让GroupID同时兼容str和int
@@ -149,6 +311,7 @@ func (p *ParamsContent) UnmarshalJSON(data []byte) error {
 	aux := &struct {
 		GroupID interface{} `json:"group_id"`
 		UserID  interface{} `json:"user_id"`
+		RequestID interface{} `json:"request_id"`
 		*Alias
 	}{
 		Alias: (*Alias)(p),
@@ -179,6 +342,9 @@ func (p *ParamsContent) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("UserID has unsupported type")
 	}
 
+	// pass-through request_id value if present in params
+	p.RequestID = aux.RequestID
+
 	return nil
 }
 
@@ -190,7 +356,7 @@ type Message struct {
 	RequestID interface{}            `json:"request_id,omitempty"`
 }
 
-// GetActionEchoKey returns RequestID if present, otherwise Echo.
+// GetActionEchoKey returns request_id if present, otherwise Echo.
 func GetActionEchoKey(a ActionMessage) interface{} {
 	if a.RequestID != nil {
 		return a.RequestID

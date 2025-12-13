@@ -29,7 +29,7 @@ func (p *Processors) ProcessChannelDirectMessage(data *dto.WSDirectMessageData) 
 	//sourece是源头频道
 	//GuildID := data.GuildID
 
-	//获取当前的s值(保留可选) 但已改为使用 requestID 生成 echostr
+	// 获取当前的s值(保留可选) 但已改为使用 request_id 生成 echostr
 	if !p.Settings.GlobalPrivateToChannel {
 		// 把频道类型的私信转换成普通ob11的私信
 
@@ -89,13 +89,13 @@ func (p *Processors) ProcessChannelDirectMessage(data *dto.WSDirectMessageData) 
 			Time:    time.Now().Unix(),
 			Avatar:  data.Author.Avatar,
 		}
-		// 根据条件判断设置 Echo 或 RequestID
+		// 根据条件判断设置 Echo 或 request_id
 		if config.GetUseRequestID() {
 			privateMsg.RequestID = echostr
 		} else {
 			privateMsg.Echo = echostr
 		}
-		// 将当前 requestID 及 appid 映射到 message
+		// 将当前 request_id 及 appid 映射到 message
 		echo.AddMsgIDWithKey(echostr, data.ID)
 		echo.AddMsgTypeWithKey(echostr, "guild_private")
 		if idx := strings.Index(echostr, "_"); idx >= 0 {
@@ -123,7 +123,7 @@ func (p *Processors) ProcessChannelDirectMessage(data *dto.WSDirectMessageData) 
 			if err != nil {
 				return fmt.Errorf("error parsing time: %v", err)
 			}
-			//获取s（保留但不用于 echostr，因为使用 requestID）
+			// 获取s（保留但不用于 echostr，因为使用 request_id）
 			//转换at
 			messageText := handlers.RevertTransformedText(data)
 			//转换appid
@@ -158,7 +158,7 @@ func (p *Processors) ProcessChannelDirectMessage(data *dto.WSDirectMessageData) 
 				Time:    t.Unix(),
 				Avatar:  data.Author.Avatar,
 			}
-			// 根据条件判断设置 Echo 或 RequestID
+			// 根据条件判断设置 Echo 或 request_id
 			if config.GetUseRequestID() {
 				onebotMsg.RequestID = echostr
 			} else {
@@ -182,7 +182,7 @@ func (p *Processors) ProcessChannelDirectMessage(data *dto.WSDirectMessageData) 
 			} else {
 				onebotMsg.Sender.Role = "member"
 			}
-			//将当前 requestID 及 appid 映射到 message
+			// 将当前 request_id 及 appid 映射到 message
 			echo.AddMsgIDWithKey(echostr, data.ID)
 			//通过echo始终得知真实的事件类型,来对应调用正确的api
 			echo.AddMsgTypeWithKey(echostr, "guild_private")
@@ -258,7 +258,7 @@ func (p *Processors) ProcessChannelDirectMessage(data *dto.WSDirectMessageData) 
 				Time:    time.Now().Unix(),
 				Avatar:  data.Author.Avatar,
 			}
-			// 根据条件判断设置 Echo 或 RequestID
+			// 根据条件判断设置 Echo 或 request_id
 			if config.GetUseRequestID() {
 				groupMsg.RequestID = echostr
 			} else {
@@ -282,7 +282,7 @@ func (p *Processors) ProcessChannelDirectMessage(data *dto.WSDirectMessageData) 
 			} else {
 				groupMsg.Sender.Role = "member"
 			}
-			//将当前 requestID 及 appid 映射到 message
+			// 将当前 request_id 及 appid 映射到 message
 			echo.AddMsgIDWithKey(echostr, data.ID)
 			echo.AddMsgTypeWithKey(echostr, "guild_private")
 			if idx := strings.Index(echostr, "_"); idx >= 0 {

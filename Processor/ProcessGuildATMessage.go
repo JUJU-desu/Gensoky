@@ -50,7 +50,7 @@ func (p *Processors) ProcessGuildATMessage(data *dto.WSATMessageData) error {
 
 		//转换appid
 		AppIDString := strconv.FormatUint(p.Settings.AppID, 10)
-		//构造echostr（使用非自增 requestID）
+		// 构造echostr（使用非自增 request_id）
 		requestID := requestid.NewRequestID()
 		echostr := AppIDString + "_" + requestID
 		//映射str的userid到int
@@ -85,7 +85,7 @@ func (p *Processors) ProcessGuildATMessage(data *dto.WSATMessageData) error {
 			Time:    t.Unix(),
 			Avatar:  data.Author.Avatar,
 		}
-		// 根据条件判断设置 Echo 或 RequestID
+		// 根据条件判断设置 Echo 或 request_id
 		if config.GetUseRequestID() {
 			onebotMsg.RequestID = echostr
 		} else {
@@ -158,7 +158,7 @@ func (p *Processors) ProcessGuildATMessage(data *dto.WSATMessageData) error {
 	} else {
 		// GlobalChannelToGroup为true时的处理逻辑
 		//将频道转化为一个群
-		//获取s（保留但不用于 echostr，因为使用 requestID）
+		// 获取s（保留但不用于 echostr，因为使用 request_id）
 		//将channelid写入ini,可取出guild_id
 		ChannelID64, err := idmap.StoreIDv2(data.ChannelID)
 		if err != nil {
@@ -190,7 +190,7 @@ func (p *Processors) ProcessGuildATMessage(data *dto.WSATMessageData) error {
 
 		//转换appid
 		AppIDString := strconv.FormatUint(p.Settings.AppID, 10)
-		//构造echostr（使用非自增 requestID）
+		// 构造echostr（使用非自增 request_id）
 		requestID := requestid.NewRequestID()
 		echostr := AppIDString + "_" + requestID
 		//映射str的userid到int
@@ -229,7 +229,7 @@ func (p *Processors) ProcessGuildATMessage(data *dto.WSATMessageData) error {
 			Time:    time.Now().Unix(),
 			Avatar:  data.Author.Avatar,
 		}
-		// 根据条件判断设置 Echo 或 RequestID
+		// 根据条件判断设置 Echo 或 request_id
 		if config.GetUseRequestID() {
 			groupMsg.RequestID = echostr
 		} else {

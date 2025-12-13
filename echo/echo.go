@@ -219,7 +219,7 @@ func cleanupExpiredMappings() {
 	}
 }
 
-// AddMsgIDWithKey 使用全局 key（非数值 s）来记录消息ID，用于 requestID 模式
+// AddMsgIDWithKey 使用全局 key（非数值 s）来记录消息ID，用于 request_id 模式
 func AddMsgIDWithKey(key string, msgID string) {
 	globalEchoMapping.mu.Lock()
 	defer globalEchoMapping.mu.Unlock()
@@ -234,7 +234,7 @@ func AddMsgIDWithKey(key string, msgID string) {
 	}
 }
 
-// AddMsgTypeWithKey 使用全局 key（非数值 s）来记录消息类型，用于 requestID 模式
+// AddMsgTypeWithKey 使用全局 key（非数值 s）来记录消息类型，用于 request_id 模式
 func AddMsgTypeWithKey(key string, msgType string) {
 	globalEchoMapping.mu.Lock()
 	defer globalEchoMapping.mu.Unlock()

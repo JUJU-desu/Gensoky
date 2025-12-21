@@ -54,9 +54,10 @@ settings:
   enable_ws_server: true    #是否启用正向ws服务器 监听server_dir:port/ws
   ws_server_token : "12345" #正向ws的token 不启动正向ws可忽略
   identify_file: true  #自动生成域名校验文件,在q.qq.com配置信息URL,在server_dir填入自己已备案域名,正确解析到机器人所在服务器ip地址,机器人即可发送链接
-  crt: "" #证书路径 从你的域名服务商或云服务商申请签发SSL证书(qq要求SSL) 
+  crt: "" #证书路径 从你的域名服务商或云服务商申请签发SSL证书(qq要求SSL)
   key: "" #密钥路径 Apache（crt文件、key文件）示例: "C:\\123.key" \需要双写成\\
-  developer_log : false    #开启开发者日志 默认关闭  log_level : "info"      #日志级别: error, warn, info, debug (默认info)  image_sizelimit : 0   #代表kb 腾讯api要求图片1500ms完成传输 如果图片发不出 请提升上行或设置此值 默认为0 不压缩
+  developer_log : false    #开启开发者日志 默认关闭
+  log_level : "info"      #日志级别: error, warn, info, debug (默认info)  image_sizelimit : 0   #代表kb 腾讯api要求图片1500ms完成传输 如果图片发不出 请提升上行或设置此值 默认为0 不压缩
 
 
   backup_port : "5200"   #当totus为ture时,port值不再是本地webui的端口,使用lotus_Port来访问webui
@@ -66,15 +67,15 @@ settings:
   title : "Gensokyo © 2023 - Hoshinonyaruko"              #程序的标题 如果多个机器人 可根据标题区分
 `
 const Logo = `
-'                                                                                                      
-'    ,hakurei,                                                      ka                                  
-'   ho"'     iki                                                    gu                                  
-'  ra'                                                              ya                                  
-'  is              ,kochiya,    ,sanae,    ,Remilia,   ,Scarlet,    fl   and  yu        ya   ,Flandre,   
-'  an      Reimu  'Dai   sei  yas     aka  Rei    sen  Ten     shi  re  sca    yu      ku'  ta"     "ko  
-'  Jun        ko  Kirisame""  ka       na    Izayoi,   sa       ig  Koishi       ko   mo'   ta       ga  
-'   you.     rei  sui   riya  ko       hi  Ina    baI  'ran   you   ka  rlet      komei'    "ra,   ,sa"  
-'     "Marisa"      Suwako    ji       na   "Sakuya"'   "Cirno"'    bu     sen     yu''        Satori  
-'                                                                                ka'                   
-'                                                                               ri'                    
+'
+'    ,hakurei,                                                      ka
+'   ho"'     iki                                                    gu
+'  ra'                                                              ya
+'  is              ,kochiya,    ,sanae,    ,Remilia,   ,Scarlet,    fl   and  yu        ya   ,Flandre,
+'  an      Reimu  'Dai   sei  yas     aka  Rei    sen  Ten     shi  re  sca    yu      ku'  ta"     "ko
+'  Jun        ko  Kirisame""  ka       na    Izayoi,   sa       ig  Koishi       ko   mo'   ta       ga
+'   you.     rei  sui   riya  ko       hi  Ina    baI  'ran   you   ka  rlet      komei'    "ra,   ,sa"
+'     "Marisa"      Suwako    ji       na   "Sakuya"'   "Cirno"'    bu     sen     yu''        Satori
+'                                                                                ka'
+'                                                                               ri'
 `

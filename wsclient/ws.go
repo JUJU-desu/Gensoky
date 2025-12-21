@@ -26,6 +26,8 @@ type WebSocketClient struct {
 	mutex          sync.Mutex // 用于同步写入和重连操作的互斥锁
 	isReconnecting bool
 	sendFailures   chan map[string]interface{}
+	// closeDone is closed when the main reader goroutine exits, indicating the connection is fully cleaned up
+	closeDone chan struct{}
 }
 
 // 发送json信息给onebot应用端
@@ -78,6 +80,16 @@ func (c *WebSocketClient) SendMessage(message map[string]interface{}) error {
 
 // 处理onebotv11应用端发来的信息
 func (c *WebSocketClient) handleIncomingMessages(ctx context.Context, cancel context.CancelFunc) {
+	defer func() {
+		// notify that the reader goroutine has exited
+		select {
+		case <-c.closeDone:
+			// already closed
+		default:
+			close(c.closeDone)
+		}
+	}()
+
 	for {
 		_, msg, err := c.conn.ReadMessage()
 		if err != nil {
@@ -128,7 +140,7 @@ func (client *WebSocketClient) Reconnect() {
 		time.Sleep(5 * time.Second)
 		newClient, err := NewWebSocketClient(client.urlStr, client.botID, client.api, client.apiv2, 30)
 		if err == nil && newClient != nil {
-			client.mutex.Lock()        // 在替换连接之前锁定
+			client.mutex.Lock() // 在替换连接之前锁定
 			oldConn := client.conn
 			oldCancel := client.cancel // 保存旧的取消函数
 
@@ -297,8 +309,9 @@ func NewWebSocketClient(urlStr string, botID uint64, api openapi.OpenAPI, apiv2 
 		botID:        botID,
 		urlStr:       urlStr,
 		sendFailures: make(chan map[string]interface{}, 100),
+		closeDone:    make(chan struct{}),
 	}
-	
+
 	// Expose shorter retry duration for tests by checking an environment variable or other config
 	// (For now, keep production behavior. Tests will use waits accordingly.)
 

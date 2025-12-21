@@ -84,6 +84,14 @@ func (c *WebSocketClient) handleIncomingMessages(ctx context.Context, cancel con
 			mylog.Println("WebSocket connection closed:", err)
 			cancel() // 取消心跳 goroutine
 
+			// 尝试显式关闭当前连接以释放远端资源
+			c.mutex.Lock()
+			if c.conn != nil {
+				_ = c.conn.Close()
+				mylog.Println("Closed websocket connection on read error")
+			}
+			c.mutex.Unlock()
+
 			if !c.isReconnecting {
 				go c.Reconnect()
 			}
@@ -96,9 +104,11 @@ func (c *WebSocketClient) handleIncomingMessages(ctx context.Context, cancel con
 
 // 断线重连
 func (client *WebSocketClient) Reconnect() {
+	mylog.Println("Starting WebSocket reconnect loop")
 	client.mutex.Lock()
 	if client.isReconnecting {
 		client.mutex.Unlock()
+		mylog.Println("Already reconnecting, returning")
 		return // 如果已经有其他携程在重连了，就直接返回
 	}
 
@@ -119,13 +129,25 @@ func (client *WebSocketClient) Reconnect() {
 		newClient, err := NewWebSocketClient(client.urlStr, client.botID, client.api, client.apiv2, 30)
 		if err == nil && newClient != nil {
 			client.mutex.Lock()        // 在替换连接之前锁定
+			oldConn := client.conn
 			oldCancel := client.cancel // 保存旧的取消函数
+
+			// 替换为新的连接和取消函数
 			client.conn = newClient.conn
 			client.api = newClient.api
 			client.apiv2 = newClient.apiv2
-			oldCancel()                      // 停止所有相关的旧协程
 			client.cancel = newClient.cancel // 更新取消函数
 			client.mutex.Unlock()
+
+			// 停止旧的协程并显式关闭旧连接以释放资源
+			if oldCancel != nil {
+				oldCancel()
+			}
+			if oldConn != nil {
+				mylog.Println("Closing old WebSocket connection after successful reconnect")
+				_ = oldConn.Close()
+			}
+
 			// 重发失败的消息
 			go newClient.processFailedMessages(oldSendFailures)
 			mylog.Println("Successfully reconnected to WebSocket.")
@@ -276,6 +298,9 @@ func NewWebSocketClient(urlStr string, botID uint64, api openapi.OpenAPI, apiv2 
 		urlStr:       urlStr,
 		sendFailures: make(chan map[string]interface{}, 100),
 	}
+	
+	// Expose shorter retry duration for tests by checking an environment variable or other config
+	// (For now, keep production behavior. Tests will use waits accordingly.)
 
 	// Sending initial message similar to your setupB function
 	message := map[string]interface{}{

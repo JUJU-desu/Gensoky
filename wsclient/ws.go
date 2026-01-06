@@ -28,6 +28,11 @@ type WebSocketClient struct {
 	sendFailures   chan map[string]interface{}
 	// closeDone is closed when the main reader goroutine exits, indicating the connection is fully cleaned up
 	closeDone chan struct{}
+	// 心跳相关字段
+	lastHeartbeatTime time.Time
+	heartbeatTimeout  time.Duration
+	reconnectAttempts int
+	maxReconnectWait  time.Duration
 }
 
 // 发送json信息给onebot应用端
@@ -114,7 +119,7 @@ func (c *WebSocketClient) handleIncomingMessages(ctx context.Context, cancel con
 	}
 }
 
-// 断线重连
+// 断线重连，带指数退避算法
 func (client *WebSocketClient) Reconnect() {
 	mylog.Println("Starting WebSocket reconnect loop")
 	client.mutex.Lock()
@@ -128,16 +133,26 @@ func (client *WebSocketClient) Reconnect() {
 	oldSendFailures := client.sendFailures
 
 	client.isReconnecting = true
+	client.reconnectAttempts = 0
 	client.mutex.Unlock()
 
 	defer func() {
 		client.mutex.Lock()
 		client.isReconnecting = false
+		client.reconnectAttempts = 0
 		client.mutex.Unlock()
 	}()
 
 	for {
+		client.mutex.Lock()
+		client.reconnectAttempts++
+		attempts := client.reconnectAttempts
+		client.mutex.Unlock()
+
+		// 固定等待5秒后重试
+		mylog.Printf("WebSocket reconnect attempt %d, waiting 5 seconds...", attempts)
 		time.Sleep(5 * time.Second)
+
 		newClient, err := NewWebSocketClient(client.urlStr, client.botID, client.api, client.apiv2, 30)
 		if err == nil && newClient != nil {
 			client.mutex.Lock() // 在替换连接之前锁定
@@ -149,6 +164,8 @@ func (client *WebSocketClient) Reconnect() {
 			client.api = newClient.api
 			client.apiv2 = newClient.apiv2
 			client.cancel = newClient.cancel // 更新取消函数
+			client.lastHeartbeatTime = time.Now() // 重置心跳时间
+			client.reconnectAttempts = 0         // 成功后重置重连计数
 			client.mutex.Unlock()
 
 			// 停止旧的协程并显式关闭旧连接以释放资源
@@ -162,10 +179,10 @@ func (client *WebSocketClient) Reconnect() {
 
 			// 重发失败的消息
 			go newClient.processFailedMessages(oldSendFailures)
-			mylog.Println("Successfully reconnected to WebSocket.")
+			mylog.Println("Successfully reconnected to WebSocket after " + fmt.Sprintf("%d", attempts) + " attempts.")
 			return
 		}
-		mylog.Println("Failed to reconnect to WebSocket. Retrying in 5 seconds...")
+		mylog.Printf("Failed to reconnect to WebSocket (attempt %d). Retrying with backoff...", attempts)
 	}
 }
 
@@ -182,6 +199,11 @@ func (client *WebSocketClient) processFailedMessages(failuresChan chan map[strin
 
 // 处理信息,调用腾讯api
 func (c *WebSocketClient) recvMessage(msg []byte) {
+	// 更新最后一次收到消息的时间
+	c.mutex.Lock()
+	c.lastHeartbeatTime = time.Now()
+	c.mutex.Unlock()
+
 	var message callapi.ActionMessage
 	err := json.Unmarshal(msg, &message)
 	if err != nil {
@@ -213,11 +235,18 @@ func TruncateMessage(message callapi.ActionMessage, maxLength int) string {
 
 // 发送心跳包
 func (c *WebSocketClient) sendHeartbeat(ctx context.Context, botID uint64) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	// 定期检查心跳响应超时（60秒内没有收到任何消息则认为连接死亡）
+	checkTicker := time.NewTicker(10 * time.Second)
+	defer checkTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(10 * time.Second):
+		case <-ticker.C:
 			message := map[string]interface{}{
 				"post_type":       "meta_event",
 				"meta_event_type": "heartbeat",
@@ -238,12 +267,31 @@ func (c *WebSocketClient) sendHeartbeat(ctx context.Context, botID uint64) {
 						"message_sent":      1663,
 						"disconnect_times":  0,
 						"lost_times":        0,
-						"last_message_time": int(time.Now().Unix()) - 10, // 假设最后一条消息是10秒前收到的
+						"last_message_time": int(time.Now().Unix()) - 10,
 					},
 				},
-				"interval": 10000, // 以毫秒为单位
+				"interval": 10000,
 			}
 			c.SendMessage(message)
+			// 发送成功后也更新时间戳，表示连接是活的
+			c.mutex.Lock()
+			c.lastHeartbeatTime = time.Now()
+			c.mutex.Unlock()
+		case <-checkTicker.C:
+			// 检查连接是否因为长时间没有收到任何消息而死亡（60秒）
+			c.mutex.Lock()
+			timeSinceLastHeartbeat := time.Since(c.lastHeartbeatTime)
+			conn := c.conn
+			c.mutex.Unlock()
+
+			// 如果60秒没有收到任何响应，主动断开并重连
+			if timeSinceLastHeartbeat > 60*time.Second && conn != nil {
+				mylog.Printf("WebSocket no message received for %v seconds. Triggering reconnect...", timeSinceLastHeartbeat.Seconds())
+				if !c.isReconnecting {
+					go c.Reconnect()
+				}
+				return // 退出心跳协程，等待重连
+			}
 		}
 	}
 }
@@ -303,13 +351,17 @@ func NewWebSocketClient(urlStr string, botID uint64, api openapi.OpenAPI, apiv2 
 		}
 	}
 	client := &WebSocketClient{
-		conn:         conn,
-		api:          api,
-		apiv2:        apiv2,
-		botID:        botID,
-		urlStr:       urlStr,
-		sendFailures: make(chan map[string]interface{}, 100),
-		closeDone:    make(chan struct{}),
+		conn:              conn,
+		api:               api,
+		apiv2:             apiv2,
+		botID:             botID,
+		urlStr:            urlStr,
+		sendFailures:      make(chan map[string]interface{}, 100),
+		closeDone:         make(chan struct{}),
+		lastHeartbeatTime: time.Now(),
+		heartbeatTimeout:  30 * time.Second,
+		reconnectAttempts: 0,
+		maxReconnectWait:  60 * time.Second, // 最多等待60秒后重试
 	}
 
 	// Expose shorter retry duration for tests by checking an environment variable or other config

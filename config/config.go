@@ -696,7 +696,7 @@ func GetCommandWhitelist() []string {
 
 // IsCommandInWhitelist 检查消息是否在白名单内
 // 如果白名单为空，则所有消息都通过
-// 否则只有以白名单中的指令开头的消息才通过
+// 否则只有白名单中的指令完整匹配的消息才通过
 func IsCommandInWhitelist(message string) bool {
 	whitelist := GetCommandWhitelist()
 
@@ -708,9 +708,23 @@ func IsCommandInWhitelist(message string) bool {
 	// 去除消息前后空格
 	message = strings.TrimSpace(message)
 
-	// 检查消息是否以白名单中的任何指令开头
+	// 提取消息中的第一个单词（指令）
+	// 指令通常以空格、制表符或其他分隔符结尾
+	var command string
+	for i, ch := range message {
+		if ch == ' ' || ch == '\t' || ch == '\n' {
+			command = message[:i]
+			break
+		}
+	}
+	// 如果消息中没有空格，整个消息就是指令
+	if command == "" {
+		command = message
+	}
+
+	// 检查提取的指令是否在白名单中（完整匹配）
 	for _, cmd := range whitelist {
-		if strings.HasPrefix(message, cmd) {
+		if command == cmd {
 			return true
 		}
 	}
